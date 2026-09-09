@@ -1,0 +1,25 @@
+{
+  "name": "foodfinder-technical-test",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,green \"npm run dev --workspace @foodfinder/web\" \"npm run dev --workspace @foodfinder/api\"",
+    "build": "npm run build --workspace @foodfinder/api && npm run build --workspace @foodfinder/web",
+    "lint": "npm run lint --workspace @foodfinder/api && npm run lint --workspace @foodfinder/web",
+    "test": "npm run test --workspace @foodfinder/api && npm run test --workspace @foodfinder/web",
+    "typecheck": "npm run typecheck --workspace @foodfinder/api && npm run typecheck --workspace @foodfinder/web",
+    "prisma:generate": "npm run prisma:generate --workspace @foodfinder/api",
+    "prisma:validate": "npm run prisma:validate --workspace @foodfinder/api",
+    "prisma:migrate": "npm run prisma:migrate --workspace @foodfinder/api",
+    "prisma:seed": "npm run prisma:seed --workspace @foodfinder/api"
+  },
+  "devDependencies": {
+    "concurrently": "10.0.5"
+  },
+  "engines": {
+    "node": ">=20.9"
+  }
+}

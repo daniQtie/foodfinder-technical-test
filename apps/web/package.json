@@ -1,0 +1,30 @@
+{
+  "name": "@foodfinder/web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "vitest run tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "17.2.2",
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "24.5.2",
+    "@types/react": "19.1.13",
+    "@types/react-dom": "19.1.9",
+    "eslint": "9.35.0",
+    "eslint-config-next": "16.3.4",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.2",
+    "vitest": "5.0.0"
+  }
+}
