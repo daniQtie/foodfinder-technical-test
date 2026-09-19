@@ -29,6 +29,10 @@ type SearchResponse = {
   products?: unknown;
 };
 
+type SearchFallbackResponse = {
+  hits?: unknown;
+};
+
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 type ServiceOptions = {
   fetcher?: FetchLike;
@@ -37,6 +41,7 @@ type ServiceOptions = {
   cacheTtlMs?: number;
   cacheMaxAgeMs?: number;
   now?: () => number;
+  useSearchFallback?: boolean;
 };
 
 type CacheEntry = {
@@ -52,6 +57,7 @@ const DEFAULT_CACHE_MAX_AGE_MS = 60 * 60_000;
 const REFRESH_COOLDOWN_MS = 60_000;
 const MAX_CACHE_ENTRIES = 50;
 const RETRYABLE_STATUS_CODES = new Set([408, 425, 500, 502, 503, 504]);
+const SEARCH_FALLBACK_URL = "https://search.openfoodfacts.org/search";
 
 const wait = (milliseconds: number) =>
   new Promise<void>((resolve) => {
@@ -68,6 +74,7 @@ export class OpenFoodFactsService implements ProductProvider {
   private readonly cacheTtlMs: number;
   private readonly cacheMaxAgeMs: number;
   private readonly now: () => number;
+  private readonly useSearchFallback: boolean;
   private rateLimitedUntil = 0;
   private readonly cache = new Map<string, CacheEntry>();
   private readonly inFlight = new Map<string, Promise<OpenFoodFactsProduct[]>>();
@@ -79,6 +86,9 @@ export class OpenFoodFactsService implements ProductProvider {
     this.cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.cacheMaxAgeMs = options.cacheMaxAgeMs ?? DEFAULT_CACHE_MAX_AGE_MS;
     this.now = options.now ?? Date.now;
+    // Unit tests inject a deterministic fetcher for the legacy endpoint. The
+    // live service gets the availability fallback without altering those tests.
+    this.useSearchFallback = options.useSearchFallback ?? options.fetcher === undefined;
   }
 
   async search(query: string, language: SupportedLanguage): Promise<OpenFoodFactsProduct[]> {
@@ -137,6 +147,19 @@ export class OpenFoodFactsService implements ProductProvider {
     if (this.now() < this.rateLimitedUntil) {
       throw new HttpError(429, "PRODUCT_SEARCH_RATE_LIMITED", "Open Food Facts search rate limit reached. Please wait before trying again.");
     }
+
+    // The maintained OFF search index is substantially more available than the
+    // legacy endpoint during anonymous-traffic spikes. It still stays entirely
+    // behind our backend and returns the same normalized DTO to the client.
+    if (this.useSearchFallback) {
+      try {
+        const indexedProducts = await this.fetchSearchFallback(query);
+        if (indexedProducts.length > 0) return indexedProducts;
+      } catch {
+        // Keep the documented legacy endpoint as a compatible fallback.
+      }
+    }
+
     const url = new URL("/cgi/search.pl", config.openFoodFactsBaseUrl);
     url.search = new URLSearchParams({
       action: "process",
@@ -198,12 +221,23 @@ export class OpenFoodFactsService implements ProductProvider {
           throw new HttpError(502, "PRODUCT_SEARCH_FAILED", "Open Food Facts returned invalid data.");
         }
       } catch (error) {
-        if (error instanceof HttpError) throw error;
+        // A 429 needs to remain visible to callers so we do not bypass OFF's
+        // rate limit. Other legacy-search failures can use the official search
+        // index, which has a separate availability profile.
+        if (error instanceof HttpError && error.status === 429) throw error;
         lastError = error;
         if (attempt < MAX_ATTEMPTS) {
           await this.wait(RETRY_DELAY_MS);
           continue;
         }
+      }
+    }
+
+    if (this.useSearchFallback) {
+      try {
+        return await this.fetchSearchFallback(query);
+      } catch (fallbackError) {
+        lastError = fallbackError;
       }
     }
 
@@ -214,5 +248,31 @@ export class OpenFoodFactsService implements ProductProvider {
         ? "Open Food Facts took too long to respond."
         : "Open Food Facts could not be reached.",
     );
+  }
+
+  private async fetchSearchFallback(query: string): Promise<OpenFoodFactsProduct[]> {
+    const url = new URL(SEARCH_FALLBACK_URL);
+    url.search = new URLSearchParams({ q: query, limit: "12" }).toString();
+    const response = await this.fetcher(url, {
+      headers: { Accept: "application/json", "User-Agent": config.openFoodFactsUserAgent },
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
+    });
+
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(`Open Food Facts search index returned ${response.status}`);
+    }
+
+    const body = (await response.json()) as SearchFallbackResponse;
+    if (!body || !Array.isArray(body.hits)) throw new Error("Invalid Open Food Facts search-index response");
+
+    return body.hits.map((hit): OpenFoodFactsProduct => {
+      if (!hit || typeof hit !== "object") return {};
+      const product = hit as Record<string, unknown>;
+      return {
+        ...product,
+        brands: Array.isArray(product.brands) ? product.brands.filter((brand): brand is string => typeof brand === "string").join(", ") : product.brands,
+      };
+    });
   }
 }

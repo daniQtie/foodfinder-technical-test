@@ -4,7 +4,10 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { ApiError, createCheckout, getRecentSearches, getSubscriptionStatus, searchProducts } from "@/lib/api";
 import { isLanguage, messages, type Language } from "@/lib/i18n";
 import type { Product, RecentSearch, SubscriptionStatus } from "@/lib/types";
-import { CheckIcon, SearchIcon } from "./icons";
+import { ArrowIcon, CheckIcon, SearchIcon } from "./icons";
+import { Brand } from "./Brand";
+import { PantryScene } from "./PantryScene";
+import { Reveal } from "./Reveal";
 import { LanguageSelector } from "./LanguageSelector";
 import { ProductCard } from "./ProductCard";
 import { SearchSkeleton } from "./SearchSkeleton";
@@ -24,6 +27,15 @@ export function FoodFinderApp() {
   const [checkoutError, setCheckoutError] = useState(false);
   const activeSearch = useRef<AbortController | null>(null);
   const copy = messages[language];
+  const categories = [
+    { kind: "cereal", label: copy.categoryCereal, query: "cereal" },
+    { kind: "chocolate", label: copy.categoryChocolate, query: "chocolate" },
+    { kind: "coffee", label: copy.categoryCoffee, query: "coffee" },
+    { kind: "snacks", label: copy.categorySnacks, query: "crackers" },
+    { kind: "dairy", label: copy.categoryDairy, query: "yogurt" },
+    { kind: "spreads", label: copy.categorySpreads, query: "Nutella" },
+  ];
+  const uniqueRecent = recent.filter((item, index, all) => all.findIndex((other) => other.query.toLowerCase() === item.query.toLowerCase()) === index).slice(0, 5);
 
   const refreshRecent = useCallback(async () => {
     try {
@@ -57,6 +69,11 @@ export function FoodFinderApp() {
     setError(null);
     setCheckoutError(false);
     setLastQuery(normalizedQuery);
+    // Keep the query and its response in the same visual flow. This is
+    // especially helpful on tall screens where the editorial hero is long.
+    window.requestAnimationFrame(() => {
+      document.getElementById("results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
     try {
       const response = await searchProducts(normalizedQuery, searchLanguage, controller.signal);
       if (controller.signal.aborted) return { count: 0 };
@@ -113,6 +130,7 @@ export function FoodFinderApp() {
   const repeatSearch = (value: string) => {
     setQuery(value);
     void performSearch(value, language).catch(() => undefined);
+    document.getElementById("search")?.focus({ preventScroll: true });
   };
 
   const subscribe = async () => {
@@ -127,44 +145,53 @@ export function FoodFinderApp() {
   };
 
   return (
-    <main className="min-h-screen">
+    <main id="top" className="min-h-screen">
       <a href="#search" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-white focus:p-3">{copy.searchLabel}</a>
-      <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[color:var(--surface)]/92 backdrop-blur-lg">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 sm:px-8">
-          <a href="#search" className="flex items-center gap-3 font-semibold tracking-[-0.03em]"><span className="grid size-9 place-items-center rounded-full bg-[var(--forest)] text-sm text-white">F</span><span className="text-xl">{copy.appName}</span></a>
-          <div className="flex items-center gap-2 sm:gap-3">
-            {subscription?.isActive && <span className="hidden items-center gap-1.5 rounded-full bg-[#dcebdd] px-3 py-2 text-xs font-semibold text-[#1d633a] sm:flex"><CheckIcon className="size-4" /> {copy.premium}</span>}
+      <header className="site-header">
+        <div className="page-width header-inner">
+          <a href="#top" aria-label={copy.appName}><Brand /></a>
+          <nav className="desktop-nav" aria-label={copy.appName}><a href="#explore">{copy.navExplore}</a><a href="#how-it-works">{copy.navHow}</a></nav>
+          <div className="flex items-center gap-3">
+            {subscription?.isActive && <span className="subscription-status">{copy.premium}</span>}
             <LanguageSelector language={language} label={copy.language} onChange={changeLanguage} />
           </div>
         </div>
       </header>
 
-      <section className="mx-auto max-w-7xl px-5 py-12 sm:px-8 sm:py-16 lg:py-20">
-        <div>
-          <div className="max-w-3xl"><p className="mb-4 font-mono text-xs font-semibold uppercase tracking-[0.24em] text-[var(--accent-dark)]">{copy.searchEyebrow}</p><h1 className="text-balance text-4xl font-semibold leading-[1.04] tracking-[-0.055em] sm:text-6xl">{copy.searchTitle}</h1><p className="mt-5 max-w-xl text-lg leading-8 text-[var(--muted)]">{copy.searchDescription}</p></div>
-        </div>
-
-        <form onSubmit={submit} className="mt-9 flex max-w-5xl flex-col gap-3 rounded-[1.75rem] border border-[var(--line)] bg-[var(--surface)] p-3 shadow-[0_24px_80px_rgba(18,61,43,0.08)] sm:flex-row">
+      <section className="page-width hero">
+        <div className="hero-copy">
+          <p className="eyebrow hero-enter"><span className="status-dot" />{copy.searchEyebrow}</p>
+          <h1 className="hero-title hero-enter">{copy.heroLead}<br/><em>{copy.heroAccent}</em></h1>
+          <p className="hero-description hero-enter">{copy.heroNote}<br/><span>{copy.searchDescription}</span></p>
+        <form onSubmit={submit} className="search-form hero-enter" role="search">
           <label htmlFor="search" className="sr-only">{copy.searchLabel}</label>
-          <div className="flex min-w-0 flex-1 items-center gap-3 px-3"><SearchIcon className="size-5 shrink-0 text-[var(--muted)]" /><input id="search" value={query} maxLength={100} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchPlaceholder} className="min-w-0 flex-1 bg-transparent py-4 text-base outline-none placeholder:text-[#89958c]" /></div>
-          <button type="submit" disabled={loading || !query.trim()} className="rounded-2xl bg-[var(--accent)] px-7 py-4 font-semibold text-white transition hover:bg-[var(--accent-dark)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--forest)] disabled:cursor-not-allowed disabled:opacity-55">{loading ? copy.searching : copy.searchButton}</button>
+          <div className="search-field"><SearchIcon /><input id="search" value={query} maxLength={100} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchPlaceholder} autoComplete="off" />{query && <button type="button" className="clear-search" aria-label={copy.clearSearch} onClick={() => { setQuery(""); document.getElementById("search")?.focus(); }}>×</button>}</div>
+          <button type="submit" disabled={loading || !query.trim()} className="button button-accent search-submit">{loading ? copy.searching : copy.searchButton}<ArrowIcon /></button>
         </form>
-
-        {recent.length > 0 && <div className="mt-5 flex flex-wrap items-center gap-2" aria-label={copy.recentSearches}><span className="mr-1 text-sm font-medium text-[var(--muted)]">{copy.recentSearches}</span>{recent.map((search) => <button key={search.id} type="button" onClick={() => repeatSearch(search.query)} className="rounded-full border border-[var(--line)] bg-white px-3.5 py-2 text-sm transition hover:border-[var(--forest)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]">{search.query}</button>)}</div>}
+        <div className="recent-searches hero-enter" aria-label={uniqueRecent.length ? copy.recentSearches : copy.suggestions}><span>{uniqueRecent.length ? copy.recentSearches : copy.suggestions}</span>{(uniqueRecent.length ? uniqueRecent.map((item) => item.query) : ["Nutella", "Weetabix", "Oreo"]).map((value) => <button key={value} type="button" onClick={() => repeatSearch(value)}>{value}<span aria-hidden="true">↗</span></button>)}</div>
         {checkoutError && <div role="alert" className="mt-5 max-w-5xl rounded-xl border border-[#edc6b8] bg-[#fff4ef] px-4 py-3 text-sm text-[var(--accent-dark)]">{copy.subscriptionError}</div>}
-
-        <section className="mt-12" aria-live="polite" aria-busy={loading}>
+        </div>
+        <PantryScene copy={copy} onSearch={repeatSearch} />
+      </section>
+      <div className="source-strip"><div className="page-width source-inner"><span>{copy.sourceLabel}</span><a href="https://world.openfoodfacts.org" target="_blank" rel="noreferrer">Open Food Facts <span aria-hidden="true">↗</span></a><span className="source-note">{copy.sourceNote}</span></div></div>
+      <section id="explore" className="page-width explore-section">
+        <Reveal><div className="section-heading"><div><p className="eyebrow">{copy.shelfLabel}</p><h2>{copy.shelfTitle}</h2></div><p>{copy.shelfNote}</p></div>
+        <div className="category-list">{categories.map((category, index) => <button type="button" key={category.kind} onClick={() => repeatSearch(category.query)} className={`category-button ${lastQuery.toLowerCase() === category.query.toLowerCase() ? "is-active" : ""}`}><span className="category-index">0{index + 1}</span><span>{category.label}</span><ArrowIcon/></button>)}</div></Reveal>
+        <section id="results" className="results-section" aria-live="polite" aria-busy={loading}>
           {loading ? <SearchSkeleton /> : error ? (
-            <div className="rounded-[1.75rem] border border-[#edc6b8] bg-[#fff4ef] px-6 py-12 text-center"><h2 className="text-xl font-semibold">{copy.errorTitle}</h2><p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[var(--muted)]">{error}</p><button type="button" onClick={() => void performSearch(lastQuery, language).catch(() => undefined)} className="mt-5 rounded-xl bg-[var(--forest)] px-5 py-3 text-sm font-semibold text-white">{copy.tryAgain}</button></div>
+            <div className="state-panel error-panel"><SearchIcon className="size-8"/><h2>{copy.errorTitle}</h2><p>{error}</p><button type="button" onClick={() => void performSearch(lastQuery, language).catch(() => undefined)} className="button button-forest">{copy.tryAgain}<ArrowIcon/></button></div>
           ) : products === null ? (
-            <div className="rounded-[1.75rem] border border-dashed border-[#b8c2b7] bg-white/50 px-6 py-12 text-center"><p className="text-lg font-medium">{copy.initialTitle}</p><p className="mt-2 text-[var(--muted)]">{copy.initialDescription}</p></div>
+            <div className="initial-note"><SearchIcon/><p>{copy.initialTitle}<span>{copy.initialDescription}</span></p><span aria-hidden="true">↗</span></div>
           ) : products.length === 0 ? (
-            <div className="rounded-[1.75rem] border border-dashed border-[#b8c2b7] bg-white/50 px-6 py-12 text-center"><h2 className="text-xl font-semibold">{copy.noResults}</h2><p className="mt-2 text-[var(--muted)]">{copy.noResultsDescription}</p></div>
+            <div className="state-panel"><SearchIcon className="size-8"/><h2>{copy.noResults}</h2><p>{copy.noResultsDescription}</p></div>
           ) : (
-            <><div className="mb-5 flex items-end justify-between gap-4"><div><p className="font-mono text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent-dark)]">{copy.results}</p><h2 className="mt-1 text-2xl font-semibold tracking-[-0.035em]">“{lastQuery}”</h2></div>{subscription?.isActive && <span className="text-sm font-medium text-[#1d633a]">{copy.subscriptionActive}</span>}</div><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{products.map((product, index) => <ProductCard key={`${product.code || "product"}-${index}`} product={product} copy={copy} checkoutLoading={checkoutLoading} onSubscribe={subscribe} />)}</div></>
+            <><div className="results-heading"><div><p className="eyebrow">{copy.results}</p><h2>“{lastQuery}” <span>{products.length} {copy.resultsCount}</span></h2></div>{subscription?.isActive && <span className="subscription-status"><CheckIcon className="size-4"/>{copy.subscriptionActive}</span>}</div><div className="product-grid">{products.map((product, index) => <Reveal key={`${product.code || "product"}-${index}`}><ProductCard product={product} copy={copy} language={language} checkoutLoading={checkoutLoading} onSubscribe={subscribe} /></Reveal>)}</div></>
           )}
         </section>
       </section>
+      <section id="how-it-works" className="page-width how-section"><Reveal><p className="eyebrow">{copy.navHow}</p><h2>{copy.howTitle}</h2><div className="steps-grid">{[{ title: copy.howStepOne, text: copy.howTextOne }, { title: copy.howStepTwo, text: copy.howTextTwo }, { title: copy.howStepThree, text: copy.howTextThree }].map((step, index) => <div className="how-step" key={step.title}><div className="step-top"><span>0{index + 1}</span><span className="step-rule" aria-hidden="true" /></div><h3>{step.title}</h3><p>{step.text}</p></div>)}</div></Reveal></section>
+      <section className="page-width"><Reveal className="premium-section"><div><p className="eyebrow">FoodFinder {copy.premium}</p><h2>{copy.premiumTitle}</h2><p>{copy.premiumNote}</p></div>{subscription?.isActive ? <span className="subscription-status"><CheckIcon/>{copy.subscriptionActive}</span> : <button type="button" className="button button-forest" disabled={checkoutLoading} onClick={() => void subscribe()}>{checkoutLoading ? copy.subscriptionProcessing : copy.subscribe}<ArrowIcon/></button>}{checkoutError && <p role="alert" className="premium-error">{copy.subscriptionError}</p>}</Reveal></section>
+      <footer className="page-width site-footer"><div className="footer-top"><a href="#top" aria-label={copy.appName}><Brand/></a><p>{copy.footerNote}</p><a href="#top" className="back-top">{copy.backTop} <span aria-hidden="true">↑</span></a></div><div className="footer-bottom"><p>{copy.dataNote}</p><span>{copy.demoLabel}</span></div></footer>
     </main>
   );
 }

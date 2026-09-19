@@ -15,6 +15,12 @@ export class ProductService {
     const currentUser = await this.dependencies.store.getDemoUser();
     const includeNutrition = hasPremiumAccess(currentUser.subscription?.status);
 
-    return rawProducts.map((product) => normalizeProduct(product, language, includeNutrition));
+    // Image-led cards are easier to scan, so keep products with a usable
+    // Open Food Facts image at the top while preserving upstream order within
+    // each group. Missing-image records remain available at the end.
+    return rawProducts
+      .map((product, index) => ({ product: normalizeProduct(product, language, includeNutrition), index }))
+      .sort((left, right) => Number(right.product.imageUrl !== null) - Number(left.product.imageUrl !== null) || left.index - right.index)
+      .map(({ product }) => product);
   }
 }

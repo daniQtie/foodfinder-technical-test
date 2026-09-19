@@ -175,13 +175,13 @@ FoodFinder does not machine-translate community product data. Switching the inte
 
 The challenge requires keyword/title search. Open Food Facts documents that ordinary full-text search is not available in the current v2/v3 search APIs; the legacy `/cgi/search.pl` endpoint is the documented mechanism that supports keyword search. This dependency is isolated in `apps/api/src/services/openFoodFacts.service.ts`, with a timeout, a small page size, a restricted field list, a configured User-Agent, and safe upstream error mapping.
 
-The legacy search endpoint is rate-limited and can occasionally return a transient server error. The service canonicalizes keyword casing/spacing and sends `no_count=1` because the UI only needs the first 12 products, not a total count of all matches. Open Food Facts' [search implementation](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/lib/ProductOpener/Display.pm) supports skipping the expensive count; this also skips writing its shared result cache, so FoodFinder maintains its own bounded cache.
+The legacy search endpoint is rate-limited and can occasionally return a transient server error. For availability, the same isolated service first tries Open Food Facts' maintained search index and falls back to the documented legacy endpoint if the index is unavailable or has no results. Both run only on the Express server and produce the same normalized DTO. The legacy request canonicalizes keyword casing/spacing and sends `no_count=1` because the UI only needs the first 12 products, not a total count of all matches. Open Food Facts' [search implementation](https://github.com/openfoodfacts/openfoodfacts-server/blob/main/lib/ProductOpener/Display.pm) supports skipping the expensive count; this also skips writing its shared result cache, so FoodFinder maintains its own bounded cache.
 
 Successful results stay fresh for 30 minutes in a 50-entry memory cache keyed by query and language. Nonempty results up to one hour old are returned immediately while a single refresh runs in the background. Failed refreshes wait at least one minute before another attempt. Results older than an hour are never used; empty results expire after 30 minutes. The cache stores upstream product data, never an authorized HTTP response. Each request rereads the subscription from MySQL immediately before constructing the free or premium DTO, including after a slow upstream request.
 
 Cold searches still depend on Open Food Facts availability and can take up to two eight-second attempts plus a short retry delay. Rate-limit responses are not retried; new upstream requests pause for at least one minute and respect a longer `Retry-After` header, while valid cached searches continue to work. The interface distinguishes timeouts from rate limits and other failures. The memory cache resets when the API process restarts; run only one `npm run dev` session to avoid competing watchers and repeated cache resets.
 
-The frontend depends only on FoodFinder's normalized DTO, so this service can later move to Search-a-licious or another supported full-text provider without changing the browser contract.
+The frontend depends only on FoodFinder's normalized DTO, so the search source can evolve without changing the browser contract.
 
 ### DTO normalization
 
@@ -214,11 +214,26 @@ One seeded demo user matches the assignment directly. Authentication, multiple t
 - Frontend search: `apps/web/components/FoodFinderApp.tsx`
 - Tests: `apps/api/tests/`
 
+## Portfolio visual design
+
+The frontend uses a warm editorial palette, locally hosted DM Sans and Fraunces,
+custom SVG icons, and a clickable product-photography hero. CSS handles hover,
+entrance, and scroll-reveal motion without an animation dependency. Reduced-motion
+preferences disable transitions and reveals. All new interface copy lives in the
+four existing translation dictionaries.
+
+Search cards keep the existing bounded image-download queue; loading, unavailable,
+and failed-download states are distinct, with a manual retry for download failures.
+Nutrition authorization remains exclusively on the Express backend. Hero photographs
+are bundled editorial assets, not replacement images for search results. Asset
+attribution and font licenses are in `apps/web/public/images/README.md` and
+`apps/web/public/fonts/`.
+
 ## Known limitations
 
 - Open Food Facts is community maintained; product fields and nutrient values may be incomplete or inaccurate.
 - Product localization depends on translations present in Open Food Facts.
-- Keyword search relies on the isolated legacy Open Food Facts full-text mechanism while their search APIs evolve.
+- Keyword search is isolated behind the backend and uses Open Food Facts' search index with the documented legacy keyword endpoint as a compatibility fallback.
 - Open Food Facts limits legacy search traffic. The bounded memory cache improves repeated local searches, but a genuinely unavailable or rate-limited upstream can still require the user to wait and retry.
 - The application intentionally supports only one seeded demo user and has no authentication system.
 - Stripe is configured for test mode; credentials and test webhook forwarding are required for end-to-end payment verification.
