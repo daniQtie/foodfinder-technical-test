@@ -97,7 +97,7 @@ The root development command runs both workspaces. The API allows CORS only from
 
 7. Copy the CLI's `whsec_...` signing secret into `STRIPE_WEBHOOK_SECRET`.
 
-The checkout route creates or reuses the demo user's Stripe Customer and creates a hosted Checkout Session with `mode: "subscription"`. The success page polls the backend a bounded number of times because a redirect is not proof of payment. Webhooks remain authoritative.
+The checkout route creates or reuses the demo user's Stripe Customer and creates a hosted Checkout Session with `mode: "subscription"`. The success redirect includes Stripe's Checkout Session ID. The backend retrieves that session and its current subscription directly from Stripe before synchronizing access, so a delayed local webhook does not strand a completed payment. The redirect and browser values are never treated as proof of payment, and webhooks remain authoritative for later lifecycle changes.
 
 Relevant local webhook events are:
 
@@ -140,6 +140,7 @@ GET  /api/products/search?q=nutella&lang=en
 GET  /api/searches/recent
 GET  /api/subscription/status
 POST /api/subscription/checkout
+POST /api/subscription/checkout/confirm
 POST /api/stripe/webhook
 ```
 
@@ -195,7 +196,7 @@ Stripe webhooks update the local subscription record. Every product search indep
 
 ### Webhook reliability
 
-The webhook route is mounted with `express.raw()` before JSON middleware, rejects invalid signatures, safely ignores unrelated events, uses subscription upserts, and records processed event IDs in `StripeEvent`. Replayed events return successfully without reprocessing. For subscription lifecycle events, the backend retrieves the latest subscription from Stripe instead of trusting delivery order, verifies that it belongs to the seeded demo user and configured premium Price, and then persists the current status. Checkout customer creation uses a stable idempotency key, and an already-active user cannot accidentally create another subscription.
+The webhook route is mounted with `express.raw()` before JSON middleware, rejects invalid signatures, safely ignores unrelated events, uses subscription upserts, and records processed event IDs in `StripeEvent`. Replayed events return successfully without reprocessing. For subscription lifecycle events, the backend retrieves the latest subscription from Stripe instead of trusting delivery order, verifies that it belongs to the seeded demo user and configured premium Price, and then persists the current status. Checkout confirmation performs the same server-side ownership, mode, completion, subscription, and Price checks. Before creating a new Checkout Session, the backend also queries Stripe for an existing active premium subscription, preventing a stale local record from causing duplicate subscriptions. Customer creation uses a stable idempotency key.
 
 ### Scope
 

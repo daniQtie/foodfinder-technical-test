@@ -40,3 +40,10 @@ export const getSubscriptionStatus = () =>
 
 export const createCheckout = () =>
   request<{ url: string }>("/api/subscription/checkout", { method: "POST" });
+
+export const confirmCheckout = (sessionId: string) =>
+  request<SubscriptionStatus>("/api/subscription/checkout/confirm", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sessionId }),
+  });

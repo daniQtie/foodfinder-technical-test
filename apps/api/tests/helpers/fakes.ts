@@ -78,6 +78,8 @@ export class FakeStripe implements StripeGateway {
   webhookEvent: Stripe.Event | null = null;
   rejectSignature = false;
   retrievedSubscription: Stripe.Subscription | null = null;
+  checkoutSession: Stripe.Checkout.Session | null = null;
+  subscriptions: Stripe.Subscription[] = [];
   premiumPrice = true;
   checkoutCalls = 0;
 
@@ -88,6 +90,15 @@ export class FakeStripe implements StripeGateway {
   async createCheckoutSession() {
     this.checkoutCalls += 1;
     return "https://checkout.stripe.test/session";
+  }
+
+  async retrieveCheckoutSession() {
+    if (this.checkoutSession) return this.checkoutSession;
+    throw new Error("No checkout session fixture");
+  }
+
+  async listSubscriptions() {
+    return this.subscriptions;
   }
 
   constructWebhookEvent() {

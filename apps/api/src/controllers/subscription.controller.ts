@@ -24,3 +24,26 @@ export const createCheckoutController = (service: SubscriptionService): RequestH
       throw new HttpError(502, "CHECKOUT_CREATION_FAILED", "Checkout could not be created.");
     }
   };
+
+export const createCheckoutConfirmationController = (
+  service: SubscriptionService,
+): RequestHandler => async (request, response) => {
+  const body: unknown = request.body;
+  const sessionId =
+    typeof body === "object" &&
+    body !== null &&
+    "sessionId" in body &&
+    typeof body.sessionId === "string"
+      ? body.sessionId.trim()
+      : "";
+  if (!/^cs_(?:test_|live_)?[A-Za-z0-9_]+$/.test(sessionId) || sessionId.length > 255) {
+    throw new HttpError(400, "INVALID_CHECKOUT_SESSION", "Checkout could not be confirmed.");
+  }
+
+  try {
+    response.json(await service.confirmCheckout(sessionId));
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(502, "CHECKOUT_CONFIRMATION_FAILED", "Checkout confirmation is unavailable.");
+  }
+};

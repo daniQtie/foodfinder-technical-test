@@ -24,7 +24,7 @@ export class StripeService implements StripeGateway {
       client_reference_id: userId,
       line_items: [{ price: config.stripePriceId, quantity: 1 }],
       subscription_data: { metadata: { demoUserId: userId } },
-      success_url: `${config.appUrl}/checkout/success`,
+      success_url: `${config.appUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${config.appUrl}/?checkout=canceled`,
     });
 
@@ -32,6 +32,19 @@ export class StripeService implements StripeGateway {
       throw new HttpError(502, "CHECKOUT_CREATION_FAILED", "Stripe did not return a checkout URL.");
     }
     return session.url;
+  }
+
+  async retrieveCheckoutSession(sessionId: string): Promise<Stripe.Checkout.Session> {
+    return stripeClient.checkout.sessions.retrieve(sessionId);
+  }
+
+  async listSubscriptions(customerId: string): Promise<Stripe.Subscription[]> {
+    const subscriptions = await stripeClient.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: 100,
+    });
+    return subscriptions.data;
   }
 
   constructWebhookEvent(payload: Buffer, signature: string): Stripe.Event {

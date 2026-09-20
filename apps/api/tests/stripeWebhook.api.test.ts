@@ -1,4 +1,5 @@
 import request from "supertest";
+import type Stripe from "stripe";
 import { describe, expect, it } from "vitest";
 
 import { createApp } from "../src/app.ts";
@@ -150,5 +151,69 @@ describe("POST /api/stripe/webhook", () => {
 
     expect(response.body.error.code).toBe("SUBSCRIPTION_ALREADY_ACTIVE");
     expect(dependencies.stripe.checkoutCalls).toBe(0);
+  });
+
+  it("checks Stripe and blocks duplicate checkout when the local status is stale", async () => {
+    const dependencies = makeDependencies();
+    dependencies.store.user.subscription = {
+      status: "canceled",
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+    };
+    dependencies.stripe.subscriptions = [makeSubscription("active")];
+
+    const response = await request(createApp(dependencies))
+      .post("/api/subscription/checkout")
+      .expect(409);
+
+    expect(response.body.error.code).toBe("SUBSCRIPTION_ALREADY_ACTIVE");
+    expect(dependencies.stripe.checkoutCalls).toBe(0);
+    expect(dependencies.store.user.subscription?.status).toBe("active");
+  });
+
+  it("securely reconciles a completed Checkout session when its webhook is delayed", async () => {
+    const dependencies = makeDependencies();
+    dependencies.stripe.checkoutSession = {
+      id: "cs_test_completed",
+      object: "checkout.session",
+      mode: "subscription",
+      status: "complete",
+      payment_status: "paid",
+      client_reference_id: "demo-user",
+      customer: "cus_demo",
+      subscription: "sub_demo",
+      metadata: {},
+    } as unknown as Stripe.Checkout.Session;
+    dependencies.stripe.retrievedSubscription = makeSubscription("active");
+
+    const response = await request(createApp(dependencies))
+      .post("/api/subscription/checkout/confirm")
+      .send({ sessionId: "cs_test_completed" })
+      .expect(200);
+
+    expect(response.body.isActive).toBe(true);
+    expect(dependencies.store.user.subscription?.status).toBe("active");
+  });
+
+  it("does not trust a completed Checkout session belonging to another user", async () => {
+    const dependencies = makeDependencies();
+    dependencies.stripe.checkoutSession = {
+      id: "cs_test_other",
+      object: "checkout.session",
+      mode: "subscription",
+      status: "complete",
+      client_reference_id: "another-user",
+      customer: "cus_demo",
+      subscription: "sub_demo",
+      metadata: {},
+    } as unknown as Stripe.Checkout.Session;
+
+    const response = await request(createApp(dependencies))
+      .post("/api/subscription/checkout/confirm")
+      .send({ sessionId: "cs_test_other" })
+      .expect(400);
+
+    expect(response.body.error.code).toBe("INVALID_CHECKOUT_SESSION");
+    expect(dependencies.store.subscriptionUpdates).toHaveLength(0);
   });
 });

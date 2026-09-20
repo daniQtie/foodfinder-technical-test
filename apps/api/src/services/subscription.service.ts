@@ -33,7 +33,42 @@ export class SubscriptionService {
       throw new HttpError(409, "SUBSCRIPTION_ALREADY_ACTIVE", "Premium is already active.");
     }
     const customerId = await this.ensureStripeCustomer(user);
+    const subscriptions = await this.dependencies.stripe.listSubscriptions(customerId);
+    const activePremiumSubscription = subscriptions.find(
+      (subscription) =>
+        hasPremiumAccess(subscription.status) &&
+        this.dependencies.stripe.hasPremiumPrice(subscription),
+    );
+    if (activePremiumSubscription) {
+      await this.syncSubscription(activePremiumSubscription, user.id);
+      throw new HttpError(409, "SUBSCRIPTION_ALREADY_ACTIVE", "Premium is already active.");
+    }
     return this.dependencies.stripe.createCheckoutSession(customerId, user.id);
+  }
+
+  async confirmCheckout(sessionId: string) {
+    const session = await this.dependencies.stripe.retrieveCheckoutSession(sessionId);
+    const demoUser = await this.dependencies.store.getDemoUser();
+    const userId = session.client_reference_id ?? session.metadata?.demoUserId;
+    const customerId = session.customer ? idFromExpandable(session.customer) : null;
+
+    if (
+      session.mode !== "subscription" ||
+      session.status !== "complete" ||
+      !session.subscription ||
+      userId !== demoUser.id ||
+      (demoUser.stripeCustomerId && customerId !== demoUser.stripeCustomerId)
+    ) {
+      throw new HttpError(400, "INVALID_CHECKOUT_SESSION", "Checkout could not be confirmed.");
+    }
+
+    const subscriptionId = idFromExpandable(session.subscription);
+    const subscription = await this.dependencies.stripe.retrieveSubscription(subscriptionId);
+    const synchronized = await this.syncSubscription(subscription, demoUser.id);
+    if (!synchronized) {
+      throw new HttpError(400, "INVALID_CHECKOUT_SESSION", "Checkout could not be confirmed.");
+    }
+    return this.status();
   }
 
   private async ensureStripeCustomer(user: DemoUser): Promise<string> {

@@ -46,6 +46,8 @@ export interface ProductProvider {
 export interface StripeGateway {
   createCustomer(email: string, userId: string): Promise<string>;
   createCheckoutSession(customerId: string, userId: string): Promise<string>;
+  retrieveCheckoutSession(sessionId: string): Promise<Stripe.Checkout.Session>;
+  listSubscriptions(customerId: string): Promise<Stripe.Subscription[]>;
   constructWebhookEvent(payload: Buffer, signature: string): Stripe.Event;
   retrieveSubscription(subscriptionId: string): Promise<Stripe.Subscription>;
   hasPremiumPrice(subscription: Stripe.Subscription): boolean;
